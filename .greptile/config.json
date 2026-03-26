@@ -1,0 +1,4 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "security", "performance", "syntax"]
+}
