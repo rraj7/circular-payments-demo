@@ -23,3 +23,7 @@ The code contains a few deliberate “gotchas” (called out with `// ⚠️ ...
 
 - `src/payments/transactionService.ts` → `processPayment(payload)`
 
+## PR workflow test
+
+This small edit exists solely to confirm that PRs can be created and opened from this repository.
+
