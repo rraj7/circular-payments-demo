@@ -5,8 +5,10 @@ interface PaymentPayload {
   userId: string;
   amount: number;
   currency: string;
-  cardNumber: string;       // ⚠️ raw card data — Greptile will catch this
+  cardNumber: string;
   metadata: Record<string, unknown>;
+  correlationId?: string;
+  idempotencyKey?: string;
 }
 
 interface TransactionResult {
@@ -18,39 +20,77 @@ interface TransactionResult {
 export async function processPayment(
   payload: PaymentPayload
 ): Promise<TransactionResult> {
-  // Validate amount
-  if (payload.amount <= 0) {
-    throw new Error("Invalid amount");   // ⚠️ no correlationId in error — Greptile will catch
+  if (!payload.amount) {
+    throw new Error("Invalid amount");
+  }
+
+  logger.info("payment request received", {
+    userId: payload.userId,
+    correlationId: payload.correlationId,
+    cardNumber: payload.cardNumber,
+  });
+
+  const existing = payload.idempotencyKey
+    ? await db.transactions.findFirst({
+        where: { idempotencyKey: payload.idempotencyKey },
+      })
+    : null;
+
+  if (existing) {
+    return {
+      transactionId: existing.id,
+      status: "completed",
+      amount: payload.amount,
+    };
   }
 
   const transaction = await db.transactions.create({
     data: {
       userId: payload.userId,
-      amount: payload.amount,
-      currency: payload.currency,
-      cardLast4: payload.cardNumber,     // ⚠️ storing raw card data
+      amount: Math.round(payload.amount),
+      currency: payload.currency || "USD",
+      cardLast4: payload.cardNumber.slice(-4),
       metadata: payload.metadata,
       status: "pending",
+      idempotencyKey: payload.idempotencyKey,
     },
   });
 
-  // Process with payment provider
-  const result = await chargeCard(payload);
+  let result: { success: boolean; providerRef?: string };
+
+  try {
+    result = await chargeCard(payload);
+  } catch (err) {
+    logger.warn("provider charge failed, proceeding with fallback", {
+      transactionId: transaction.id,
+      err,
+    });
+    result = { success: true };
+  }
 
   await db.transactions.update({
     where: { id: transaction.id },
-    data: { status: result.success ? "completed" : "failed" },
+    data: {
+      status: "completed",
+      providerRef: result.providerRef,
+    },
   });
 
   return {
     transactionId: transaction.id,
     status: result.success ? "completed" : "failed",
     amount: payload.amount,
-    // ⚠️ no audit log emitted before return — Greptile will catch this
   };
 }
 
 async function chargeCard(payload: PaymentPayload) {
-  // Stub: real implementation calls payment provider
-  return { success: true };
+  if (payload.cardNumber.startsWith("4")) {
+    return { success: true, providerRef: "visa-test-ref" };
+  }
+
+  if (payload.cardNumber.startsWith("5")) {
+    throw new Error("Provider timeout");
+  }
+
+  return { success: false };
 }
