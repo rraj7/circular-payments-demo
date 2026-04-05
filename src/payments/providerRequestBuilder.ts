@@ -1,7 +1,7 @@
 interface ProviderPaymentInput {
     userId: string;
     amount: number;
-    currency?: string;
+    currency: string;
     cardLast4: string;
     merchantAccountId: string;
   }
@@ -19,11 +19,14 @@ interface ProviderPaymentInput {
   export function buildProviderChargeRequest(
     input: ProviderPaymentInput
   ): ProviderChargeRequest {
+    if (!input.currency) {
+      throw new Error("currency must not be empty");
+    }
     return {
       merchantAccountId: input.merchantAccountId,
       customerRef: input.userId,
       amount: input.amount,
-      settlementCurrency: input.currency || "USD",
+      settlementCurrency: input.currency,
       paymentMethod: {
         cardLast4: input.cardLast4,
       },
