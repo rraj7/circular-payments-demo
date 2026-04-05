@@ -1,0 +1,29 @@
+# Qodo Merge (PR-Agent) configuration
+# Mirrors the same payment conventions used by Greptile and CodeRabbit
+
+[pr_reviewer]
+enable_review_labels_security = true
+enable_review_labels_effort = true
+require_security_review = true
+extra_instructions = """
+You are reviewing a payments service. Apply these rules strictly:
+
+1. **PCI / Sensitive Data**: Flag any code that stores, logs, or transmits raw card data
+   (full PAN, CVV, expiry). Only the last 4 digits should ever be persisted.
+2. **Audit Logging**: Every payment mutation (create, update, refund) must emit a
+   structured audit log entry before returning a result to the caller.
+3. **Error Context**: All thrown errors must include a `correlationId` field so they
+   can be traced end-to-end. Generic error messages without trace context should be flagged.
+4. **Idempotency**: Check whether payment operations guard against duplicate
+   processing (idempotency keys, unique constraints, etc.).
+
+These rules are defined in circular/payments-api-conventions.md and apply to all files
+under src/payments/**/*.ts and src/lending/**/*.kt.
+"""
+
+[pr_description]
+enable_pr_description = true
+extra_instructions = """
+When generating the PR description, highlight any violations of the payment API conventions
+defined in circular/payments-api-conventions.md.
+"""

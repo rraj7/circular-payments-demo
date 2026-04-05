@@ -1,0 +1,39 @@
+# CodeRabbit configuration — mirrors Greptile's review scope for side-by-side comparison
+# Docs: https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: en-US
+
+reviews:
+  # Enable auto-review on every PR (same as Greptile)
+  auto_review:
+    enabled: true
+    drafts: false
+
+  # High-level review profile
+  profile: chill # options: chill, assertive, followup — start with chill to match Greptile's tone
+
+  # Focus areas — these map to the rules in circular/payments-api-conventions.md
+  path_instructions:
+    - path: "src/payments/**/*.ts"
+      instructions: |
+        You are reviewing a payments service. Apply these rules strictly:
+
+        1. **PCI / sensitive data**: Flag any code that stores, logs, or transmits raw card data
+           (full PAN, CVV, expiry). Only the last 4 digits should ever be persisted.
+        2. **Audit logging**: Every payment mutation (create, update, refund) must emit a
+           structured audit log entry before returning a result to the caller.
+        3. **Error context**: All thrown errors must include a `correlationId` field so they
+           can be traced end-to-end. Generic messages like "Invalid amount" without trace
+           context should be flagged.
+        4. **Idempotency**: Check whether payment operations guard against duplicate
+           processing (idempotency keys, unique constraints, etc.).
+
+    - path: "src/lending/**/*.kt"
+      instructions: |
+        Apply the same audit-log, correlationId, and sensitive-data rules as the payments path.
+
+  # Let CodeRabbit add a review summary at the top of its comment (easy to compare with Greptile's summary)
+  collapse_walkthrough: false
+
+chat:
+  auto_reply: true
