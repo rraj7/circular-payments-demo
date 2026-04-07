@@ -1,29 +1,99 @@
-# circular-payments-demo — Circular payments service demo (Greptile)
+# I Tested 4 AI Code Review Agents on a Payments Service. Here's the One Bug None of Them Caught.
 
-This repository is a small, intentionally-not-production-ready demo used by the Greptile engineering team to showcase how automated analysis can find common payment-handling problems.
+> **Greptile vs CodeRabbit vs Qodo Merge vs GitHub Copilot** — a head-to-head comparison on real payment infrastructure code, with deliberately planted business logic flaws.
 
-## What’s in here
+[![Medium Article](https://img.shields.io/badge/Read_the_full_article-Medium-black?logo=medium)](https://medium.com/@rishiraj)
 
-The core logic lives in `src/payments/transactionService.ts`, where `processPayment(payload)`:
+---
 
-1. Validates the payment amount.
-2. Creates a `pending` transaction record.
-3. Charges the card via a stubbed `chargeCard(...)` call.
-4. Updates the transaction status to `completed` or `failed`.
+## What This Repo Is
 
-## Why this demo is useful
+A minimal TypeScript payment processing service built specifically to **stress-test AI code review agents**. It contains deliberately planted business logic flaws — some obvious, some subtle — to measure what AI reviewers catch and what they miss.
 
-The code contains a few deliberate “gotchas” (called out with `// ⚠️ ...` comments in the source) that Greptile should flag, including:
+This is the companion repository to the Medium article linked above.
 
-- Handling/storing sensitive card data incorrectly (raw card data is assigned to a field intended for only the last 4 digits).
-- Error paths missing useful correlation/audit context (e.g., the validation error does not include a `correlationId`).
-- Missing audit-log emission before returning the result.
+## The Experiment
 
-## Key entrypoint
+Four AI code review agents were configured on this repo with the **same set of business rules**, then tested against two pull requests:
 
-- `src/payments/transactionService.ts` → `processPayment(payload)`
+| Agent | Configuration | Custom Config? |
+|---|---|---|
+| **Greptile** | Reads `circular/payments-api-conventions.md` automatically | No (auto-discovers) |
+| **CodeRabbit** | `.coderabbit.yaml` with `path_instructions` | Yes |
+| **Qodo Merge** | `.pr_agent.toml` with `extra_instructions` | Yes |
+| **GitHub Copilot** | Requested as PR reviewer | No (zero config) |
 
-## PR workflow test
+## The Two Test PRs
 
-This small edit exists solely to confirm that PRs can be created and opened from this repository.
+### [PR #6 — The Control Test](../../pull/6)
+A `refundPayment()` function with **4 obvious violations**: raw PAN storage, missing `correlationId`, no audit log, no idempotency guard.
 
+**Result: All 4 agents caught all 4 flaws.** Score: 4/4 across the board.
+
+### [PR #7 — The Trap](../../pull/7)
+Three new modules (`feeCalculator.ts`, `settlementBatcher.ts`, `webhookNotifier.ts`) that look like clean, well-structured code but contain **3 hidden business logic flaws**:
+
+| # | Flaw | File | What's Wrong |
+|---|---|---|---|
+| 1 | **Floating-point fee math** | `feeCalculator.ts` | `amount * 0.029` — IEEE-754 rounding errors accumulate across settlement batches |
+| 2 | **Webhook fires before DB commit** | `transactionService.ts` | Merchant gets notified "completed" while DB still says "pending" |
+| 3 | **Timezone-dependent settlement cutoff** | `settlementBatcher.ts` | `new Date()` uses server-local time — breaks in multi-region deployments |
+
+**Results:**
+
+| Flaw | Greptile | CodeRabbit | Qodo Merge | Copilot |
+|:---|:---:|:---:|:---:|:---:|
+| Floating-point fees | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| Webhook before DB | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| **Timezone cutoff** | :x: | :x: | :x: | :x: |
+
+**All 4 agents missed the timezone flaw.** The one bug that would cause silent financial reconciliation failures in production — and no AI reviewer caught it.
+
+## Business Rules
+
+The agents were given these rules (from [`circular/payments-api-conventions.md`](circular/payments-api-conventions.md)):
+
+```
+rule: All payment mutations must emit a structured audit log before returning
+rule: Never store or log raw card data (PAN, CVV, full card number)
+rule: All thrown errors must include a correlationId field
+rule: Error responses must include correlationId for tracing
+applies_to: ["src/payments/**/*.ts", "src/lending/**/*.kt"]
+```
+
+## Repo Structure
+
+```
+src/payments/
+  transactionService.ts    # Core payment + refund flow
+  feeCalculator.ts         # Fee computation (PR #7)
+  settlementBatcher.ts     # Daily merchant settlement (PR #7)
+  webhookNotifier.ts       # Merchant webhook delivery (PR #7)
+
+circular/
+  payments-api-conventions.md   # Business rules for AI reviewers
+
+.coderabbit.yaml               # CodeRabbit configuration
+.pr_agent.toml                 # Qodo Merge configuration
+
+article/
+  medium-draft.md              # Full Medium article draft
+```
+
+## Key Takeaway
+
+AI code review agents are **production-ready for pattern matching** — PCI violations, missing error context, non-atomic operations. They're **getting better at cross-file reasoning** — tracing data flow between webhook notifier and transaction service.
+
+But they **cannot yet reason about deployment topology** — how `new Date()` behaves differently across AWS regions, and why that matters for financial settlement windows. That's still senior engineer territory.
+
+> The senior engineer's role isn't going away. It's shifting — from "read every line" to "focus on the three things AI can't see."
+
+---
+
+## License
+
+MIT
+
+---
+
+**Built by [@rraj7](https://github.com/rraj7)** with [Claude Code](https://claude.com/claude-code)
